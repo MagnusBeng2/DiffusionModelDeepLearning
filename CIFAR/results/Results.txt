@@ -1,0 +1,11 @@
+Saved model checkpoint to models/ddpm_cifar_epoch_500.pth
+Saved EMA model checkpoint to models/ema_ddpm_cifar_epoch_500.pth
+Using device: cuda
+GPU index: 0
+GPU name: NVIDIA A100-PCIE-40GB
+Generating images from pure noise...
+Denoising images: 1000it [07:47,  2.14it/s]
+Saved generated images to 'images/generated_samples_debug2.png'
+FID: 48.17
+Inception Score: 1.15 ± 0.01
+[Epoch 500] FID = 48.17, Inception = 1.15 ± 0.01
