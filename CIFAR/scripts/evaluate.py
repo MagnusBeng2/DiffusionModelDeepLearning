@@ -118,15 +118,20 @@ def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, sa
 
     def get_features(images, model, batch_size=256):
         features = []
+        model.eval()
         for i in range(0, len(images), batch_size):
             batch = images[i:i+batch_size]
-            batch = (batch + 1) / 2  # Rescale to [0, 1]
+            batch = (batch + 1) / 2
             batch = batch.repeat(1, 3, 1, 1)
-            batch = F.interpolate(batch, size=(299, 299), mode="bilinear", align_corners=False)
-            batch = batch.to(device)
+
             with torch.no_grad():
+                batch = batch.to(device)
+                batch = F.interpolate(batch, size=(299, 299), mode="bilinear", align_corners=False)
                 feats = model(batch).detach().cpu().numpy()
+
             features.append(feats)
+            torch.cuda.empty_cache()
+
         return np.vstack(features)
 
     real_features = get_features(real_images, inception)
@@ -144,17 +149,22 @@ def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, sa
 
     fid_score = np.sum((mu_real - mu_gen) ** 2) + np.trace(sigma_real + sigma_gen - 2 * cov_sqrt)
 
-    def run_inception_in_batches(images, model, device, batch_size=256):
+    def run_inception_in_batches(images, model, device, batch_size=128):
         preds = []
+        model.eval()
         for i in range(0, images.size(0), batch_size):
             batch = images[i:i+batch_size]
             batch = (batch + 1) / 2
             batch = batch.repeat(1, 3, 1, 1)
-            batch = F.interpolate(batch, size=(299, 299), mode="bilinear", align_corners=False)
-            batch = batch.to(device)
+
             with torch.no_grad():
+                batch = batch.to(device)
+                batch = F.interpolate(batch, size=(299, 299), mode="bilinear", align_corners=False)
                 logits = model(batch).softmax(dim=-1).cpu().numpy()
-                preds.append(logits)
+
+            preds.append(logits)
+            torch.cuda.empty_cache()
+
         return np.concatenate(preds, axis=0)
 
     preds = run_inception_in_batches(generated_images, inception, device)

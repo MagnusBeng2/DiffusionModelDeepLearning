@@ -131,7 +131,7 @@ def train_ddpm(batch_size, epochs, learning_rate, timesteps, beta_schedule, enab
 
             fid_info = evaluate_model(
                 model_path=ema_path,
-                num_samples=1000,
+                num_samples=10000,
                 timesteps=1000,
                 use_random_noise=True,
                 save_results=False

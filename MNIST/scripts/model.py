@@ -7,11 +7,12 @@ import torch.nn.functional as F
 def sinusoidal_embedding(timesteps, dim):
     assert dim % 2 == 0
     half_dim = dim // 2
-    emb = math.log(10000) / (half_dim - 1)
-    emb = torch.exp(torch.arange(half_dim, device=timesteps.device) * -emb)
-    emb = timesteps[:, None] * emb[None, :]
-    return torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
-
+    emb_factor = math.log(10000) / (half_dim - 1)
+    exponents = torch.arange(half_dim, dtype=torch.float32, device=timesteps.device)
+    exponents = torch.exp(-emb_factor * exponents)
+    sinusoid = timesteps.float().unsqueeze(1) * exponents.unsqueeze(0)
+    emb = torch.cat([torch.sin(sinusoid), torch.cos(sinusoid)], dim=-1)
+    return emb
 # === Self-Attention Block ===
 class SelfAttention(nn.Module):
     def __init__(self, channels):

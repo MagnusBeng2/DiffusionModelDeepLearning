@@ -17,8 +17,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# Paths
-MODEL_PATH = "models/ema_ddpm_mnist_epoch_50.pth"  # <-- Use EMA model here
+MODEL_PATH = "models/ema_ddpm_mnist_epoch_50.pth"
 TEST_DATA_PATH = "data/processed/mnist_test.npz"
 IMAGE_SAVE_DIR = "images"
 RESULTS_DIR = "results"
@@ -26,13 +25,11 @@ RESULTS_DIR = "results"
 os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-# === Cosine schedule ===
 def cosine_schedule(timesteps):
     s = 0.008
     t = torch.linspace(0, timesteps - 1, timesteps)
     return torch.cos((t / timesteps + s) / (1 + s) * (math.pi / 2)) ** 2
 
-# === Reverse diffusion ===
 def reverse_diffusion(model, device, noisy_images, timesteps, labels=None, guidance_weight=3.0):
     model.eval()
     beta_t = (1 - cosine_schedule(timesteps)).to(device)
@@ -47,7 +44,6 @@ def reverse_diffusion(model, device, noisy_images, timesteps, labels=None, guida
             alpha_bar = alpha_bar_t[t].view(-1, 1, 1, 1)
             t_tensor = torch.full((x_t.shape[0],), t, device=device, dtype=torch.long)
 
-            # Classifier-free guidance
             pred_cond = model(x_t, t_tensor, labels)
             pred_uncond = model(x_t, t_tensor, None)
             predicted_noise = pred_uncond + guidance_weight * (pred_cond - pred_uncond)
@@ -59,7 +55,6 @@ def reverse_diffusion(model, device, noisy_images, timesteps, labels=None, guida
             x_t = torch.clamp(x_t, -1.0, 1.0)
     return x_t
 
-# === Utilities ===
 def get_next_filename():
     files = [f for f in os.listdir(IMAGE_SAVE_DIR) if f.startswith("generated_samples_debug") and f.endswith(".png")]
     numbers = [int(re.match(r"generated_samples_debug(\d+)\.png", f).group(1)) for f in files if re.match(r"generated_samples_debug(\d+)\.png", f)]
@@ -82,12 +77,11 @@ def load_real_images_from_npz(num_samples, device):
     indices = torch.randperm(len(images))[:num_samples]
     return images[indices].to(device)
 
-# === Main evaluation ===
-def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, save_results=True):
+def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, save_results=True, batch_size=128):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = UNet().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))  # Load EMA weights!
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
     real_images = load_real_images_from_npz(num_samples, device)
@@ -110,22 +104,29 @@ def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, sa
     vutils.save_image(generated_images[:16], filename, normalize=True)
     print(f"Saved generated images to '{filename}'")
 
-    # Preprocessing for Inception Score / FID
-    def preprocess_for_inception(imgs):
+    def preprocess_for_inception(imgs, device, batch_size=256):
         imgs = (imgs + 1) / 2
         imgs = imgs.repeat(1, 3, 1, 1)
-        return F.interpolate(imgs, size=(299, 299), mode="bilinear", align_corners=False)
 
-    gen_incep = preprocess_for_inception(generated_images)
-    real_incep = preprocess_for_inception(real_images)
+        upsampled_batches = []
+        for i in range(0, imgs.size(0), batch_size):
+            batch = imgs[i:i+batch_size].to(device)
+            batch = F.interpolate(batch, size=(299, 299), mode="bilinear", align_corners=False)
+            upsampled_batches.append(batch.cpu())  # move to CPU after interpolation
+            torch.cuda.empty_cache()
+
+        return torch.cat(upsampled_batches, dim=0)
+
+
+    gen_incep = preprocess_for_inception(generated_images, device)
+    real_incep = preprocess_for_inception(real_images, device)
 
     inception = models.inception_v3(weights=models.Inception_V3_Weights.IMAGENET1K_V1)
     inception.fc = nn.Identity()
     inception.eval().to(device)
 
-    def get_features(images, model, batch_size=512):
+    def get_features(images, model, batch_size=128):
         features = []
-        model.eval()
         for i in range(0, len(images), batch_size):
             batch = images[i:i+batch_size].to(device)
             with torch.no_grad():
@@ -149,7 +150,11 @@ def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, sa
     fid_score = np.sum((mu_real - mu_gen) ** 2) + np.trace(sigma_real + sigma_gen - 2 * cov_sqrt)
 
     with torch.no_grad():
-        preds = [inception(img.unsqueeze(0)).softmax(dim=-1).cpu().numpy() for img in gen_incep]
+        preds = []
+        for i in range(0, len(gen_incep), batch_size):
+            batch = gen_incep[i:i+batch_size].to(device)
+            pred = inception(batch).softmax(dim=-1).cpu().numpy()
+            preds.append(pred)
         preds = np.vstack(preds)
 
     splits = 10
@@ -175,7 +180,6 @@ def evaluate_model(model_path, num_samples, timesteps, use_random_noise=True, sa
         "Inception Score": (inception_score, inception_std)
     }
 
-# === CLI ===
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate a trained DDPM model.")
     parser.add_argument("--model_path", type=str, default=MODEL_PATH)
