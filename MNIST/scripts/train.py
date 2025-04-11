@@ -155,7 +155,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=0.0002)
-    parser.add_argument("--timesteps", type=int, default=250)
+    parser.add_argument("--timesteps", type=int, default=1000)
     parser.add_argument("--enable_cfg", action="store_true", help="Enable classifier-free guidance")
     parser.add_argument("--beta_schedule", type=str, default="linear")
     args = parser.parse_args()
